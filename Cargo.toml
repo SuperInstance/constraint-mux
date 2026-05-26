@@ -3,6 +3,8 @@ name = "constraint-mux"
 version = "0.2.0"
 edition = "2021"
 description = "Serial port multiplexer with real-time consonance analysis — collaborative constraint-aware instrument bridge"
+license = "MIT"
+repository = "https://github.com/SuperInstance/constraint-mux"
 
 [[bin]]
 name = "constraint-mux"
