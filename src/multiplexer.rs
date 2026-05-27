@@ -210,6 +210,7 @@ pub async fn serial_reader(mux: Arc<Multiplexer>, device: String, baud: u32) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consonance::LatticePoint;
 
     #[test]
     fn test_multiplexer_fan_out() {
@@ -267,6 +268,123 @@ mod tests {
         let history = mux.get_history();
         assert!(history.iter().any(|l| l.contains("line1")));
         assert!(history.iter().any(|l| l.contains("line2")));
+    }
+
+    #[test]
+    fn test_multiplexer_alias_and_device() {
+        let mux = Arc::new(Multiplexer::new(
+            "my-synth".to_string(),
+            Some("/dev/ttyUSB0".to_string()),
+            9600,
+        ));
+        assert_eq!(mux.alias, "my-synth");
+        assert_eq!(mux.device, Some("/dev/ttyUSB0".to_string()));
+        assert_eq!(mux.baud, 9600);
+    }
+
+    #[test]
+    fn test_binary_protocol_detection() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        let mut rx = mux.subscribe_consonance();
+
+        // Create a valid framed ConsonanceMessage
+        let msg = ConsonanceMessage::new(1000, 330.0, LatticePoint::new(0, 0, 0), 0.8, 2);
+        let framed = msg.encode_framed();
+        mux.process_serial_data(&framed);
+
+        let received = rx.try_recv().unwrap();
+        assert!((received.frequency - 330.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_note_format_detection() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        let mut rx = mux.subscribe_consonance();
+
+        mux.process_serial_data(b"NOTE:C4:261.63\n");
+
+        let msg = rx.try_recv().unwrap();
+        assert!((msg.frequency - 261.63).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_midi_channel_extraction() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        let mut rx = mux.subscribe_consonance();
+
+        // MIDI note on channel 3 (status 0x93)
+        mux.process_serial_data(&[0x93, 60, 80]);
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(msg.voice_id, 3);
+    }
+
+    #[test]
+    fn test_history_cap() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        // Exceed the 5000 line cap
+        for i in 0..5100 {
+            let data = format!("line{}\n", i);
+            mux.process_serial_data(data.as_bytes());
+        }
+        let history = mux.get_history();
+        assert!(history.len() <= 5000, "history should be capped at 5000, got {}", history.len());
+    }
+
+    #[test]
+    fn test_heatmap_normalized_after_updates() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        mux.process_serial_data(b"F:200.0\n");
+        mux.process_serial_data(b"F:300.0\n");
+
+        let hm = mux.heatmap.lock().unwrap();
+        let norm = hm.normalized();
+        let max = norm.iter().flat_map(|r| r.iter()).copied().fold(0.0f32, f32::max);
+        assert!((max - 1.0).abs() < 0.01, "max should be ~1.0, got {max}");
+    }
+
+    #[test]
+    fn test_multiple_subscribers() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        let mut rx1 = mux.subscribe_output();
+        let mut rx2 = mux.subscribe_output();
+
+        mux.process_serial_data(b"broadcast\n");
+
+        assert_eq!(rx1.try_recv().unwrap(), b"broadcast\n".to_vec());
+        assert_eq!(rx2.try_recv().unwrap(), b"broadcast\n".to_vec());
+    }
+
+    #[test]
+    fn test_consonance_score_between_two_notes() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        let mut rx = mux.subscribe_consonance();
+
+        // First note — consonance should be 1.0 (no previous)
+        mux.process_serial_data(b"F:440.0\n");
+        let msg1 = rx.try_recv().unwrap();
+        assert!((msg1.consonance - 1.0).abs() < 0.01);
+
+        // Second note — perfect fifth, should be consonant
+        mux.process_serial_data(b"F:660.0\n");
+        let msg2 = rx.try_recv().unwrap();
+        assert!(msg2.consonance > 0.0, "fifth should have positive consonance: {}", msg2.consonance);
+    }
+
+    #[test]
+    fn test_history_empty_lines_skipped() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        mux.process_serial_data(b"\n\nhello\n\n");
+        let history = mux.get_history();
+        assert_eq!(history.len(), 1);
+        assert!(history[0].contains("hello"));
+    }
+
+    #[test]
+    fn test_client_count_wraps() {
+        let mux = Arc::new(Multiplexer::new("test".to_string(), None, 115200));
+        mux.remove_client(); // remove without add — wraps (usize behavior)
+        // Just verify it doesn't panic
     }
 
     #[test]

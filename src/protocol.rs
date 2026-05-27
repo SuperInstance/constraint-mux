@@ -180,6 +180,99 @@ mod tests {
     }
 
     #[test]
+    fn test_consonance_message_to_event() {
+        let msg = ConsonanceMessage::new(
+            12345,
+            440.0,
+            LatticePoint::new(-1, 1, 0),
+            0.95,
+            3,
+        );
+        let evt = msg.to_event();
+        assert_eq!(evt.timestamp_ns, 12345);
+        assert!((evt.frequency - 440.0).abs() < 1e-10);
+        assert_eq!(evt.lattice, LatticePoint::new(-1, 1, 0));
+        assert!((evt.consonance - 0.95).abs() < 1e-5);
+        assert_eq!(evt.voice_id, 3);
+    }
+
+    #[test]
+    fn test_consonance_message_decode_garbage() {
+        // Empty data should fail
+        assert!(ConsonanceMessage::decode(b"").is_none());
+    }
+
+    #[test]
+    fn test_mux_message_decode_invalid_json() {
+        assert!(MuxMessage::decode(b"not json").is_none());
+        assert!(MuxMessage::decode(b"{}").is_none());
+        assert!(MuxMessage::decode(b"{\"type\":\"unknown\"}").is_none());
+    }
+
+    #[test]
+    fn test_mux_message_consonance_subscribe_none() {
+        let msg = MuxMessage::ConsonanceSubscribe { min_score: None };
+        let json = serde_json::to_vec(&msg).unwrap();
+        let decoded = MuxMessage::decode(&json).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_mux_message_consonance_event() {
+        let msg = MuxMessage::ConsonanceEvent {
+            timestamp_ns: 9999,
+            frequency: 523.25,
+            lattice_a: 1,
+            lattice_b: -1,
+            lattice_c: 0,
+            consonance: 0.42,
+            voice_id: 7,
+        };
+        let json = serde_json::to_vec(&msg).unwrap();
+        let decoded = MuxMessage::decode(&json).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_mux_message_heatmap_update() {
+        let msg = MuxMessage::HeatmapUpdate {
+            data: vec![vec![0.1, 0.2], vec![0.3, 0.4]],
+        };
+        let json = serde_json::to_vec(&msg).unwrap();
+        let decoded = MuxMessage::decode(&json).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_mux_message_history() {
+        let msg = MuxMessage::History {
+            lines: vec!["line1".to_string(), "line2".to_string()],
+        };
+        let json = serde_json::to_vec(&msg).unwrap();
+        let decoded = MuxMessage::decode(&json).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_consonance_message_framed_structure() {
+        let msg = ConsonanceMessage::new(0, 100.0, LatticePoint::zero(), 0.5, 0);
+        let framed = msg.encode_framed();
+        let len = u32::from_be_bytes([framed[0], framed[1], framed[2], framed[3]]) as usize;
+        // Payload should be reasonable size (bincode overhead + fields)
+        assert!(len > 0 && len < 200);
+        assert_eq!(framed.len(), len + 4);
+    }
+
+    #[test]
+    fn test_mux_message_encode_framed_structure() {
+        let msg = MuxMessage::Hello;
+        let framed = msg.encode_framed();
+        let len = u32::from_be_bytes([framed[0], framed[1], framed[2], framed[3]]) as usize;
+        assert!(len > 0);
+        assert_eq!(framed.len(), len + 4);
+    }
+
+    #[test]
     fn test_mux_message_framed() {
         let msg = MuxMessage::ConsonanceSubscribe { min_score: Some(0.5) };
         let framed = msg.encode_framed();

@@ -302,6 +302,162 @@ mod tests {
     }
 
     #[test]
+    fn test_lattice_zero() {
+        let z = LatticePoint::zero();
+        assert_eq!(z.a, 0);
+        assert_eq!(z.b, 0);
+        assert_eq!(z.c, 0);
+        assert!((z.ratio() - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lattice_copy_eq() {
+        let a = LatticePoint::new(1, 2, 3);
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_consonance_zero_frequency() {
+        assert_eq!(consonance_score(0.0, 440.0), 0.0);
+        assert_eq!(consonance_score(440.0, 0.0), 0.0);
+        assert_eq!(consonance_score(0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn test_consonance_negative_frequency() {
+        assert_eq!(consonance_score(-100.0, 440.0), 0.0);
+        assert_eq!(consonance_score(440.0, -100.0), 0.0);
+    }
+
+    #[test]
+    fn test_consonance_perfect_fourth() {
+        // 4/3 ratio — should be reasonably consonant (score > 0.3)
+        let score = consonance_score(440.0, 440.0 * 4.0 / 3.0);
+        assert!(score > 0.3, "perfect fourth should have some consonance: {score}");
+    }
+
+    #[test]
+    fn test_ratio_to_lattice_large_ratio() {
+        // Ratio 4.0: while > 2.0 loop, 4.0→2.0 (not > 2.0, stops), matches octave candidate
+        let lp = ratio_to_lattice(4.0);
+        assert_eq!(lp, LatticePoint::new(1, 0, 0)); // matches octave
+    }
+
+    #[test]
+    fn test_ratio_to_lattice_small_ratio() {
+        // Ratio < 1 should normalize up
+        let lp = ratio_to_lattice(0.75); // 3/4 → normalizes to 3/2 (perfect fifth)
+        assert_eq!(lp, LatticePoint::new(-1, 1, 0));
+    }
+
+    #[test]
+    fn test_frequency_to_note_zero() {
+        let (note, octave) = frequency_to_note(0.0);
+        assert_eq!(note, "?");
+        assert_eq!(octave, 0);
+    }
+
+    #[test]
+    fn test_frequency_to_note_negative() {
+        let (note, octave) = frequency_to_note(-100.0);
+        assert_eq!(note, "?");
+        assert_eq!(octave, 0);
+    }
+
+    #[test]
+    fn test_frequency_to_note_c3() {
+        let (note, octave) = frequency_to_note(130.81); // C3
+        assert_eq!(note, "C");
+        assert_eq!(octave, 3);
+    }
+
+    #[test]
+    fn test_consonance_event_serde() {
+        let evt = ConsonanceEvent {
+            timestamp_ns: 12345,
+            frequency: 440.0,
+            lattice: LatticePoint::new(1, 2, 3),
+            consonance: 0.75,
+            voice_id: 5,
+        };
+        let json = serde_json::to_string(&evt).unwrap();
+        let decoded: ConsonanceEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.timestamp_ns, 12345);
+        assert!((decoded.frequency - 440.0).abs() < 1e-10);
+        assert_eq!(decoded.lattice, LatticePoint::new(1, 2, 3));
+        assert!((decoded.consonance - 0.75).abs() < 1e-5);
+        assert_eq!(decoded.voice_id, 5);
+    }
+
+    #[test]
+    fn test_lattice_point_serde() {
+        let lp = LatticePoint::new(-3, 2, -1);
+        let json = serde_json::to_string(&lp).unwrap();
+        let decoded: LatticePoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(lp, decoded);
+    }
+
+    #[test]
+    fn test_heatmap_freq_to_bin_in_range() {
+        let hm = ConsonanceHeatmap::new(10, 100.0, 1000.0);
+        assert_eq!(hm.freq_to_bin(100.0), Some(0));
+        assert_eq!(hm.freq_to_bin(1000.0), Some(9));
+        assert_eq!(hm.freq_to_bin(550.0), Some(5));
+    }
+
+    #[test]
+    fn test_heatmap_freq_to_bin_out_of_range() {
+        let hm = ConsonanceHeatmap::new(10, 100.0, 1000.0);
+        assert_eq!(hm.freq_to_bin(50.0), None);
+        assert_eq!(hm.freq_to_bin(2000.0), None);
+        assert_eq!(hm.freq_to_bin(-1.0), None);
+    }
+
+    #[test]
+    fn test_heatmap_normalized_empty() {
+        let hm = ConsonanceHeatmap::new(5, 100.0, 1000.0);
+        let norm = hm.normalized();
+        for row in &norm {
+            for &v in row {
+                assert_eq!(v, 0.0f32);
+            }
+        }
+    }
+
+    #[test]
+    fn test_heatmap_record_pair_out_of_range() {
+        let mut hm = ConsonanceHeatmap::new(5, 100.0, 1000.0);
+        // Both out of range — should silently skip
+        hm.record_pair(50.0, 2000.0);
+        let total: f32 = hm.heatmap.iter().flat_map(|r| r.iter()).sum();
+        assert_eq!(total, 0.0);
+    }
+
+    #[test]
+    fn test_heatmap_symmetry() {
+        let mut hm = ConsonanceHeatmap::new(10, 100.0, 1000.0);
+        hm.record_pair(200.0, 300.0);
+        // Heatmap should be symmetric
+        for i in 0..10 {
+            for j in 0..10 {
+                assert!((hm.heatmap[i][j] - hm.heatmap[j][i]).abs() < 1e-6,
+                    "heatmap not symmetric at [{i}][{j}]");
+            }
+        }
+    }
+
+    #[test]
+    fn test_lattice_distance_asymmetric() {
+        let a = LatticePoint::new(1, 2, 3);
+        let b = LatticePoint::new(-1, -2, -3);
+        // Distance should be symmetric
+        let d1 = a.distance(&b);
+        let d2 = b.distance(&a);
+        assert!((d1 - d2).abs() < 1e-10);
+    }
+
+    #[test]
     fn test_heatmap_decay() {
         let mut hm = ConsonanceHeatmap::new(5, 100.0, 1000.0);
         hm.record_pair(200.0, 300.0);
