@@ -4,6 +4,14 @@ Serial port multiplexer with real-time consonance analysis. Fan out serial data 
 
 Built for collaborative constraint-aware instruments — multiple musicians on separate devices can connect to the same serial port and see live consonance heatmaps of the combined output.
 
+## What This Gives You
+
+- **Serial → WebSocket fan-out** — One serial port, unlimited WebSocket clients
+- **Live consonance scoring** — 3-limit harmonic lattice (2^a × 3^b × 5^c) pairwise consonance heatmap
+- **HTTP dashboard** — Real-time visualization at `localhost:3000`
+- **Demo mode** — Test without hardware using simulated musical data
+- **Zero-config startup** — Defaults work out of the box
+
 ## Install
 
 ```bash
@@ -76,6 +84,14 @@ Options:
   --ws-addr <ADDR>        WebSocket listen address (default: 127.0.0.1:8080)
   --dashboard-addr <ADDR> Dashboard address (default: 127.0.0.1:3000)
   --foreground            Run in foreground (don't daemonize)
+```
+
+## Testing
+
+Unit tests for consonance engine and lattice point arithmetic:
+
+```bash
+cargo test
 ```
 
 ## Dependencies
