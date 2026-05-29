@@ -1,9 +1,10 @@
 # constraint-mux
 
-Serial port multiplexer with real-time consonance analysis. Fan out serial data to multiple WebSocket clients while scoring harmonic consonance on the fly.
+Async serial port multiplexer with real-time consonance analysis — fan out serial data to multiple clients with live harmonic lattice scoring and a WebSocket dashboard.
 
-Built for collaborative constraint-aware instruments — multiple musicians on separate devices can connect to the same serial port and see live consonance heatmaps of the combined output.
+## What This Gives You
 
+<<<<<<< HEAD
 ## What This Gives You
 
 - **Serial → WebSocket fan-out** — One serial port, unlimited WebSocket clients
@@ -13,11 +14,86 @@ Built for collaborative constraint-aware instruments — multiple musicians on s
 - **Zero-config startup** — Defaults work out of the box
 
 ## Install
+=======
+- **Serial multiplexing** — one serial port, N subscribers (tokio broadcast channels)
+- **Real-time consonance scoring** — every data point rated on the Eisenstein harmonic lattice
+- **Binary wire protocol** — bincode-encoded `ConsonanceMessage` with length-prefix framing
+- **WebSocket dashboard** — live heatmap and frequency display in the browser
+- **59 tests** — comprehensive coverage of protocol, multiplexer, and consonance math
+
+## Quick Start
+
+```bash
+# Start multiplexer on a serial port
+cargo run -- --device /dev/ttyUSB0 --baud 115200 --alias synth-1
+
+# Connect WebSocket clients
+# ws://localhost:8080/ws/consonance  — live consonance events
+# ws://localhost:8080/ws/raw         — raw serial output
+```
+
+### As a Library
+
+```rust
+use constraint_mux::{Multiplexer, ConsonanceMessage};
+
+let mux = Multiplexer::new("synth-1".into(), Some("/dev/ttyUSB0".into()), 115200);
+
+// Subscribe to consonance events
+let mut rx = mux.subscribe_consonance();
+while let Ok(msg) = rx.recv().await {
+    println!("Voice {} @ {:.1} Hz, consonance={:.3}, lattice=2^{}×3^{}×5^{}",
+             msg.voice_id, msg.frequency, msg.consonance,
+             msg.lattice_a, msg.lattice_b, msg.lattice_c);
+}
+```
+
+## Wire Protocol
+
+Each `ConsonanceMessage` is bincode-serialized with a 4-byte big-endian length prefix:
+
+```
+[u32 length][ConsonanceMessage]
+  ├── timestamp_ns: u64
+  ├── frequency: f64
+  ├── lattice_a: i8   (2^a)
+  ├── lattice_b: i8   (3^b)
+  ├── lattice_c: i8   (5^c)
+  ├── consonance: f32
+  └── voice_id: u8
+```
+
+## API Reference
+
+| Type | Description |
+|---|---|
+| `Multiplexer` | Async serial fan-out with consonance analysis |
+| `ConsonanceMessage` | Wire-level protocol message |
+| `ConsonanceHeatmap` | Frequency × time consonance grid |
+| `LatticePoint` | Eisenstein lattice coordinate (a, b, c) |
+
+## How It Fits
+
+The **hardware bridge** in the constraint theory ecosystem:
+
+- [constraint-audio](https://github.com/SuperInstance/constraint-audio) — consonance scoring engine used here
+- [constraint-synth](https://github.com/SuperInstance/constraint-synth) — synthesizer that could drive the serial data
+- [conservation-protocol](https://github.com/SuperInstance/conservation-protocol) — Laplacian messaging for conservation tracking
+
+## Testing
+
+```bash
+cargo test  # 59 tests
+```
+
+## Installation
+>>>>>>> 9de6867 (docs: world-class README audit and rewrite)
 
 ```bash
 cargo install constraint-mux
 ```
 
+<<<<<<< HEAD
 ## Usage
 
 ### Connect to a serial port
@@ -108,6 +184,8 @@ cargo test
 - [constraint-theory-core](https://github.com/SuperInstance/constraint-theory-core) — The constraint math this is built on
 - [flux-tensor-midi](https://github.com/SuperInstance/flux-tensor-midi) — 4D MIDI tensor representation
 
+=======
+>>>>>>> 9de6867 (docs: world-class README audit and rewrite)
 ## License
 
-MIT OR Apache-2.0
+MIT
